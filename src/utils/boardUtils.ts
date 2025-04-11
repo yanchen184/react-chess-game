@@ -143,3 +143,80 @@ export function parseFEN(fen: string): {
     fullmoveNumber
   };
 }
+
+/**
+ * 將棋盤狀態轉換為FEN表示法
+ */
+export function boardToFEN(gameState: { 
+  board: (Piece | null)[][],
+  activeColor: PieceColor,
+  castlingRights: { [color: string]: { kingSide: boolean, queenSide: boolean } },
+  enPassantTarget: Position | null,
+  halfmoveClock: number,
+  fullmoveNumber: number
+}): string {
+  const { board, activeColor, castlingRights, enPassantTarget, halfmoveClock, fullmoveNumber } = gameState;
+  let fen = '';
+  
+  // Board position
+  for (let i = 0; i < BOARD_SIZE; i++) {
+    let emptyCount = 0;
+    
+    for (let j = 0; j < BOARD_SIZE; j++) {
+      const piece = board[i][j];
+      
+      if (piece === null) {
+        emptyCount++;
+      } else {
+        if (emptyCount > 0) {
+          fen += emptyCount;
+          emptyCount = 0;
+        }
+        
+        let pieceChar;
+        switch (piece.type) {
+          case PieceType.PAWN: pieceChar = 'p'; break;
+          case PieceType.ROOK: pieceChar = 'r'; break;
+          case PieceType.KNIGHT: pieceChar = 'n'; break;
+          case PieceType.BISHOP: pieceChar = 'b'; break;
+          case PieceType.QUEEN: pieceChar = 'q'; break;
+          case PieceType.KING: pieceChar = 'k'; break;
+          default: pieceChar = '?'; // Should never happen
+        }
+        
+        if (piece.color === PieceColor.WHITE) {
+          pieceChar = pieceChar.toUpperCase();
+        }
+        
+        fen += pieceChar;
+      }
+    }
+    
+    if (emptyCount > 0) {
+      fen += emptyCount;
+    }
+    
+    if (i < BOARD_SIZE - 1) {
+      fen += '/';
+    }
+  }
+  
+  // Active color
+  fen += ' ' + (activeColor === PieceColor.WHITE ? 'w' : 'b');
+  
+  // Castling rights
+  let castlingString = '';
+  if (castlingRights[PieceColor.WHITE].kingSide) castlingString += 'K';
+  if (castlingRights[PieceColor.WHITE].queenSide) castlingString += 'Q';
+  if (castlingRights[PieceColor.BLACK].kingSide) castlingString += 'k';
+  if (castlingRights[PieceColor.BLACK].queenSide) castlingString += 'q';
+  fen += ' ' + (castlingString || '-');
+  
+  // En passant target
+  fen += ' ' + (enPassantTarget ? coordsToAlgebraic(enPassantTarget) : '-');
+  
+  // Halfmove clock and fullmove number
+  fen += ' ' + halfmoveClock + ' ' + fullmoveNumber;
+  
+  return fen;
+}
