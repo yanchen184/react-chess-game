@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Board from './Board';
 import { PieceColor, GameState, GameMode, MoveType, Piece, Position, Move, AI_DEPTH } from '../models/types';
 import { parseFEN, INITIAL_POSITION, deepClone, coordsToAlgebraic } from '../utils/boardUtils';
 import { getPossibleMoves, filterLegalMoves, isKingInCheck, isCheckmate, isStalemate, applyMove, moveToAlgebraic } from '../utils/gameUtils';
+import { findBestMove } from '../utils/aiUtils';
 import './ChessGame.css';
 
 /**
@@ -18,7 +19,7 @@ const ChessGame: React.FC = () => {
   // Selected piece position
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
   // Valid moves for the selected piece
-  const [validMoves, setValidMoves] = useState<Position[]>([]);
+  const [validMoves, setValidMoves] = useState<Move[]>([]);
   // Game mode (two-player or vs computer)
   const [gameMode, setGameMode] = useState<GameMode>(GameMode.TWO_PLAYER);
   // Move history
@@ -37,6 +38,13 @@ const ChessGame: React.FC = () => {
     [PieceColor.WHITE]: { kingSide: true, queenSide: true },
     [PieceColor.BLACK]: { kingSide: true, queenSide: true }
   });
+  // AI is thinking
+  const [isAIThinking, setIsAIThinking] = useState<boolean>(false);
+
+  // Sound effect for moving pieces
+  const moveSound = new Audio(`${process.env.PUBLIC_URL}/sounds/move.mp3`);
+  const captureSound = new Audio(`${process.env.PUBLIC_URL}/sounds/capture.mp3`);
+  const checkSound = new Audio(`${process.env.PUBLIC_URL}/sounds/check.mp3`);
 
   // Initialize the board when the component mounts
   useEffect(() => {
@@ -51,6 +59,7 @@ const ChessGame: React.FC = () => {
       gameMode !== GameMode.TWO_PLAYER
     ) {
       const timer = setTimeout(() => {
+        setIsAIThinking(true);
         makeAIMove();
       }, 500); // Add a small delay for better UX
       
@@ -81,7 +90,25 @@ const ChessGame: React.FC = () => {
     });
     setEnPassantTarget(newEnPassantTarget);
     setCastlingRights(newCastlingRights);
+    setIsAIThinking(false);
   };
+
+  /**
+   * Play the appropriate sound for a move
+   */
+  const playMoveSound = useCallback((move: Move, newGameState: GameState) => {
+    try {
+      if (newGameState === GameState.CHECK || newGameState === GameState.CHECKMATE) {
+        checkSound.play();
+      } else if (move.capturedPiece) {
+        captureSound.play();
+      } else {
+        moveSound.play();
+      }
+    } catch (error) {
+      console.error("Error playing sound:", error);
+    }
+  }, [moveSound, captureSound, checkSound]);
 
   /**
    * Handle click on a square
@@ -93,7 +120,7 @@ const ChessGame: React.FC = () => {
     }
     
     // If AI is thinking, ignore clicks
-    if (currentPlayer === PieceColor.BLACK && gameMode !== GameMode.TWO_PLAYER) {
+    if (isAIThinking || (currentPlayer === PieceColor.BLACK && gameMode !== GameMode.TWO_PLAYER)) {
       return;
     }
     
@@ -158,8 +185,6 @@ const ChessGame: React.FC = () => {
     // Filter out moves that would put or leave the king in check
     const legalMoves = filterLegalMoves(board, possibleMoves, currentPlayer);
     
-    // Extract just the 'to' positions for highlighting on the board
-    const movePositions = legalMoves.map(move => move.to);
     setValidMoves(legalMoves);
   };
 
@@ -204,6 +229,12 @@ const ChessGame: React.FC = () => {
     // Switch player
     const nextPlayer = currentPlayer === PieceColor.WHITE ? PieceColor.BLACK : PieceColor.WHITE;
     
+    // Check for check, checkmate, or stalemate
+    const newGameState = calculateGameState(newBoard, nextPlayer);
+    
+    // Play sound effect
+    playMoveSound(move, newGameState);
+    
     // Update state
     setBoard(newBoard);
     setCapturedPieces(newCapturedPieces);
@@ -211,9 +242,24 @@ const ChessGame: React.FC = () => {
     setEnPassantTarget(newEnPassantTarget);
     setMoveHistory(newMoveHistory);
     setCurrentPlayer(nextPlayer);
-    
-    // Check for check, checkmate, or stalemate
-    updateGameState(newBoard, nextPlayer);
+    setGameState(newGameState);
+  };
+
+  /**
+   * Calculate the game state (check, checkmate, stalemate)
+   */
+  const calculateGameState = (newBoard: (Piece | null)[][], nextPlayer: PieceColor): GameState => {
+    if (isKingInCheck(newBoard, nextPlayer)) {
+      if (isCheckmate(newBoard, nextPlayer)) {
+        return GameState.CHECKMATE;
+      } else {
+        return GameState.CHECK;
+      }
+    } else if (isStalemate(newBoard, nextPlayer)) {
+      return GameState.STALEMATE;
+    } else {
+      return GameState.ACTIVE;
+    }
   };
 
   /**
@@ -259,6 +305,33 @@ const ChessGame: React.FC = () => {
   };
 
   /**
+   * Make an AI move
+   */
+  const makeAIMove = () => {
+    // Use Web Worker for AI calculation in the background (if available)
+    const performAIMove = () => {
+      // Get AI search depth based on difficulty
+      const depth = AI_DEPTH[gameMode as keyof typeof AI_DEPTH] || 1;
+      
+      // Use the minimax algorithm to find the best move
+      const aiMove = findBestMove(board, depth, true, enPassantTarget, castlingRights);
+      
+      if (aiMove) {
+        // Make the move
+        makeMove(aiMove);
+      } else {
+        // No valid moves - game should be over
+        updateGameState(board, PieceColor.BLACK);
+      }
+      
+      setIsAIThinking(false);
+    };
+
+    // Use setTimeout to avoid blocking the UI
+    setTimeout(performAIMove, 100);
+  };
+
+  /**
    * Update the game state (check, checkmate, stalemate)
    */
   const updateGameState = (newBoard: (Piece | null)[][], nextPlayer: PieceColor) => {
@@ -273,33 +346,6 @@ const ChessGame: React.FC = () => {
     } else {
       setGameState(GameState.ACTIVE);
     }
-  };
-
-  /**
-   * Make an AI move
-   */
-  const makeAIMove = () => {
-    // Get all legal moves for all black pieces
-    const allMoves: Move[] = [];
-    for (let row = 0; row < 8; row++) {
-      for (let col = 0; col < 8; col++) {
-        const piece = board[row][col];
-        if (piece && piece.color === PieceColor.BLACK) {
-          const possibleMoves = getPossibleMoves(board, { row, col }, enPassantTarget, castlingRights);
-          const legalMoves = filterLegalMoves(board, possibleMoves, PieceColor.BLACK);
-          allMoves.push(...legalMoves);
-        }
-      }
-    }
-    
-    if (allMoves.length === 0) return;
-    
-    // For now, just pick a random move (will implement AI evaluation later)
-    const randomIndex = Math.floor(Math.random() * allMoves.length);
-    const aiMove = allMoves[randomIndex];
-    
-    // Make the move
-    makeMove(aiMove);
   };
 
   /**
@@ -407,19 +453,25 @@ const ChessGame: React.FC = () => {
       <div className="game-info">
         <div className="game-status">
           <h2>
-            {gameState === GameState.ACTIVE && `${currentPlayer === PieceColor.WHITE ? '白方' : '黑方'}的回合`}
-            {gameState === GameState.CHECK && `${currentPlayer === PieceColor.WHITE ? '白方' : '黑方'}被將軍!`}
-            {gameState === GameState.CHECKMATE && `將死! ${currentPlayer === PieceColor.WHITE ? '黑方' : '白方'}獲勝!`}
-            {gameState === GameState.STALEMATE && '和局 - 無子可動'}
-            {gameState === GameState.DRAW && '和局'}
+            {isAIThinking && gameMode !== GameMode.TWO_PLAYER && currentPlayer === PieceColor.BLACK && 
+              '電腦思考中...'}
+            {!isAIThinking && gameState === GameState.ACTIVE && 
+              `${currentPlayer === PieceColor.WHITE ? '白方' : '黑方'}的回合`}
+            {!isAIThinking && gameState === GameState.CHECK && 
+              `${currentPlayer === PieceColor.WHITE ? '白方' : '黑方'}被將軍!`}
+            {!isAIThinking && gameState === GameState.CHECKMATE && 
+              `將死! ${currentPlayer === PieceColor.WHITE ? '黑方' : '白方'}獲勝!`}
+            {!isAIThinking && gameState === GameState.STALEMATE && '和局 - 無子可動'}
+            {!isAIThinking && gameState === GameState.DRAW && '和局'}
           </h2>
         </div>
         <div className="game-controls">
-          <button onClick={undoMove}>撤銷上一步</button>
-          <button onClick={restartGame}>重新開始</button>
+          <button onClick={undoMove} disabled={isAIThinking || moveHistory.length === 0}>撤銷上一步</button>
+          <button onClick={restartGame} disabled={isAIThinking}>重新開始</button>
           <select 
             value={gameMode} 
             onChange={(e) => changeGameMode(e.target.value as GameMode)}
+            disabled={isAIThinking}
           >
             <option value={GameMode.TWO_PLAYER}>雙人對戰</option>
             <option value={GameMode.COMPUTER_EASY}>電腦對手 - 簡單</option>
