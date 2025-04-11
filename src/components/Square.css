@@ -1,0 +1,50 @@
+.square {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.square.light {
+  background-color: #f0d9b5;
+}
+
+.square.dark {
+  background-color: #b58863;
+}
+
+.square.selected {
+  background-color: #aad0ff;
+}
+
+.square.valid-move {
+  cursor: pointer;
+}
+
+.piece {
+  user-select: none;
+  z-index: 2;
+}
+
+.piece.white {
+  color: #fff;
+  text-shadow: 0 0 1px #000, 0 0 2px #000, 0 0 3px #000;
+}
+
+.piece.black {
+  color: #000;
+  text-shadow: 0 0 1px #fff, 0 0 2px #fff, 0 0 3px #fff;
+}
+
+.valid-move-indicator {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: rgba(0, 0, 0, 0.2);
+  z-index: 1;
+}
