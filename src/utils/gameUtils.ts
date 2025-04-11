@@ -385,3 +385,282 @@ function getKnightMoves(
     }
   }
 }
+
+/**
+ * Get all possible bishop moves
+ */
+function getBishopMoves(
+  board: (Piece | null)[][],
+  position: Position,
+  piece: Piece,
+  moves: Move[]
+): void {
+  // Bishops move diagonally
+  const diagonalDirections = [
+    DIRECTIONS.NORTHEAST,
+    DIRECTIONS.SOUTHEAST,
+    DIRECTIONS.SOUTHWEST,
+    DIRECTIONS.NORTHWEST
+  ];
+  
+  getLinearMoves(board, position, piece, moves, diagonalDirections);
+}
+
+/**
+ * Get all possible rook moves
+ */
+function getRookMoves(
+  board: (Piece | null)[][],
+  position: Position,
+  piece: Piece,
+  moves: Move[]
+): void {
+  // Rooks move horizontally and vertically
+  const straightDirections = [
+    DIRECTIONS.NORTH,
+    DIRECTIONS.EAST,
+    DIRECTIONS.SOUTH,
+    DIRECTIONS.WEST
+  ];
+  
+  getLinearMoves(board, position, piece, moves, straightDirections);
+}
+
+/**
+ * Get all possible queen moves
+ */
+function getQueenMoves(
+  board: (Piece | null)[][],
+  position: Position,
+  piece: Piece,
+  moves: Move[]
+): void {
+  // Queens move like rooks and bishops combined
+  const allDirections = [
+    DIRECTIONS.NORTH,
+    DIRECTIONS.NORTHEAST,
+    DIRECTIONS.EAST,
+    DIRECTIONS.SOUTHEAST,
+    DIRECTIONS.SOUTH,
+    DIRECTIONS.SOUTHWEST,
+    DIRECTIONS.WEST,
+    DIRECTIONS.NORTHWEST
+  ];
+  
+  getLinearMoves(board, position, piece, moves, allDirections);
+}
+
+/**
+ * Get linear moves in the given directions
+ */
+function getLinearMoves(
+  board: (Piece | null)[][],
+  position: Position,
+  piece: Piece,
+  moves: Move[],
+  directions: { row: number, col: number }[]
+): void {
+  const { row, col } = position;
+  
+  for (const direction of directions) {
+    let newRow = row + direction.row;
+    let newCol = col + direction.col;
+    
+    while (isValidPosition({ row: newRow, col: newCol })) {
+      const targetPiece = board[newRow][newCol];
+      
+      if (!targetPiece) {
+        // Empty square
+        moves.push({
+          from: position,
+          to: { row: newRow, col: newCol },
+          type: MoveType.NORMAL,
+          piece
+        });
+      } else {
+        // Hit a piece
+        if (targetPiece.color !== piece.color) {
+          // Can capture opponent piece
+          moves.push({
+            from: position,
+            to: { row: newRow, col: newCol },
+            type: MoveType.CAPTURE,
+            piece,
+            capturedPiece: targetPiece
+          });
+        }
+        
+        break; // Stop looking in this direction
+      }
+      
+      newRow += direction.row;
+      newCol += direction.col;
+    }
+  }
+}
+
+/**
+ * Get all possible king moves
+ */
+function getKingMoves(
+  board: (Piece | null)[][],
+  position: Position,
+  piece: Piece,
+  moves: Move[],
+  castlingRights: { [color: string]: { kingSide: boolean, queenSide: boolean } }
+): void {
+  const { row, col } = position;
+  
+  // King can move one square in any direction
+  const allDirections = [
+    DIRECTIONS.NORTH,
+    DIRECTIONS.NORTHEAST,
+    DIRECTIONS.EAST,
+    DIRECTIONS.SOUTHEAST,
+    DIRECTIONS.SOUTH,
+    DIRECTIONS.SOUTHWEST,
+    DIRECTIONS.WEST,
+    DIRECTIONS.NORTHWEST
+  ];
+  
+  for (const direction of allDirections) {
+    const newRow = row + direction.row;
+    const newCol = col + direction.col;
+    const newPos = { row: newRow, col: newCol };
+    
+    if (isValidPosition(newPos)) {
+      const targetPiece = board[newRow][newCol];
+      
+      if (!targetPiece) {
+        // Empty square
+        moves.push({
+          from: position,
+          to: newPos,
+          type: MoveType.NORMAL,
+          piece
+        });
+      } else if (targetPiece.color !== piece.color) {
+        // Capture
+        moves.push({
+          from: position,
+          to: newPos,
+          type: MoveType.CAPTURE,
+          piece,
+          capturedPiece: targetPiece
+        });
+      }
+    }
+  }
+  
+  // Castling
+  if (!piece.hasMoved) {
+    // Check if castling is allowed
+    const kingColor = piece.color;
+    
+    // Kingside castling
+    if (castlingRights[kingColor]?.kingSide) {
+      const kingRank = kingColor === PieceColor.WHITE ? 7 : 0;
+      
+      // Check if the squares between king and rook are empty
+      if (!board[kingRank][5] && !board[kingRank][6]) {
+        // Check if the king-side rook is in place and hasn't moved
+        const rookPiece = board[kingRank][7];
+        
+        if (rookPiece && 
+            rookPiece.type === PieceType.ROOK && 
+            rookPiece.color === kingColor && 
+            !rookPiece.hasMoved) {
+          
+          // Check if king is not in check and doesn't move through check
+          // This will be filtered in filterLegalMoves() function
+          moves.push({
+            from: position,
+            to: { row: kingRank, col: 6 },
+            type: MoveType.CASTLE_KINGSIDE,
+            piece,
+            castlingRookFrom: { row: kingRank, col: 7 },
+            castlingRookTo: { row: kingRank, col: 5 }
+          });
+        }
+      }
+    }
+    
+    // Queenside castling
+    if (castlingRights[kingColor]?.queenSide) {
+      const kingRank = kingColor === PieceColor.WHITE ? 7 : 0;
+      
+      // Check if the squares between king and rook are empty
+      if (!board[kingRank][1] && !board[kingRank][2] && !board[kingRank][3]) {
+        // Check if the queen-side rook is in place and hasn't moved
+        const rookPiece = board[kingRank][0];
+        
+        if (rookPiece && 
+            rookPiece.type === PieceType.ROOK && 
+            rookPiece.color === kingColor && 
+            !rookPiece.hasMoved) {
+          
+          // Check if king is not in check and doesn't move through check
+          // This will be filtered in filterLegalMoves() function
+          moves.push({
+            from: position,
+            to: { row: kingRank, col: 2 },
+            type: MoveType.CASTLE_QUEENSIDE,
+            piece,
+            castlingRookFrom: { row: kingRank, col: 0 },
+            castlingRookTo: { row: kingRank, col: 3 }
+          });
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Check if a move is valid (used for move validation)
+ */
+export function isValidMove(
+  board: (Piece | null)[][],
+  from: Position,
+  to: Position,
+  enPassantTarget: Position | null = null,
+  castlingRights: { [color: string]: { kingSide: boolean, queenSide: boolean } } = {
+    [PieceColor.WHITE]: { kingSide: true, queenSide: true },
+    [PieceColor.BLACK]: { kingSide: true, queenSide: true }
+  }
+): Move | null {
+  const piece = board[from.row][from.col];
+  
+  if (!piece) return null;
+  
+  const possibleMoves = getPossibleMoves(board, from, enPassantTarget, castlingRights);
+  const legalMoves = filterLegalMoves(board, possibleMoves, piece.color);
+  
+  // Find the move that matches the destination
+  for (const move of legalMoves) {
+    if (move.to.row === to.row && move.to.col === to.col) {
+      return move;
+    }
+  }
+  
+  return null; // No valid move found
+}
+
+/**
+ * Get the position of a newly created en passant target (if any)
+ */
+export function getEnPassantTarget(move: Move): Position | null {
+  const { from, to, piece, type } = move;
+  
+  // Only pawns moving two squares create en passant targets
+  if (piece.type === PieceType.PAWN && type === MoveType.NORMAL) {
+    const rowDiff = Math.abs(to.row - from.row);
+    
+    if (rowDiff === 2) {
+      // En passant target is the square behind the pawn
+      const direction = piece.color === PieceColor.WHITE ? 1 : -1;
+      return { row: to.row + direction, col: to.col };
+    }
+  }
+  
+  return null;
+}
