@@ -15,10 +15,25 @@
   align-items: center;
 }
 
+.game-status {
+  position: relative;
+}
+
 .game-status h2 {
   margin: 0;
   font-size: 24px;
   color: #333;
+}
+
+.game-status .version {
+  position: absolute;
+  top: -5px;
+  right: -40px;
+  font-size: 12px;
+  background-color: #4a6da7;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 10px;
 }
 
 .game-controls {
@@ -38,8 +53,14 @@
   transition: background-color 0.2s;
 }
 
-.game-controls button:hover,
-.game-controls select:hover {
+.game-controls button:disabled,
+.game-controls select:disabled {
+  background-color: #a0a0a0;
+  cursor: not-allowed;
+}
+
+.game-controls button:hover:not(:disabled),
+.game-controls select:hover:not(:disabled) {
   background-color: #3a5a8a;
 }
 
