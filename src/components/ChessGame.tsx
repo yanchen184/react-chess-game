@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import Board from './Board';
-import { PieceColor, GameState, GameMode, MoveType, Piece, Position, Move } from '../models/types';
-import { parseFEN, INITIAL_POSITION } from '../utils/boardUtils';
+import { PieceColor, GameState, GameMode, MoveType, Piece, Position, Move, AI_DEPTH } from '../models/types';
+import { parseFEN, INITIAL_POSITION, deepClone, coordsToAlgebraic } from '../utils/boardUtils';
+import { getPossibleMoves, filterLegalMoves, isKingInCheck, isCheckmate, isStalemate, applyMove, moveToAlgebraic } from '../utils/gameUtils';
 import './ChessGame.css';
 
 /**
@@ -27,17 +28,47 @@ const ChessGame: React.FC = () => {
     [PieceColor.WHITE]: [],
     [PieceColor.BLACK]: []
   });
+  // En passant target square
+  const [enPassantTarget, setEnPassantTarget] = useState<Position | null>(null);
+  // Castling rights
+  const [castlingRights, setCastlingRights] = useState<{
+    [color: string]: { kingSide: boolean, queenSide: boolean }
+  }>({
+    [PieceColor.WHITE]: { kingSide: true, queenSide: true },
+    [PieceColor.BLACK]: { kingSide: true, queenSide: true }
+  });
 
   // Initialize the board when the component mounts
   useEffect(() => {
     initializeBoard();
   }, []);
 
+  // Make AI move when it's AI's turn
+  useEffect(() => {
+    if (
+      gameState === GameState.ACTIVE &&
+      currentPlayer === PieceColor.BLACK &&
+      gameMode !== GameMode.TWO_PLAYER
+    ) {
+      const timer = setTimeout(() => {
+        makeAIMove();
+      }, 500); // Add a small delay for better UX
+      
+      return () => clearTimeout(timer);
+    }
+  }, [currentPlayer, gameState, gameMode]);
+
   /**
    * Initialize the chess board with the starting position
    */
   const initializeBoard = () => {
-    const { board: newBoard, activeColor } = parseFEN(INITIAL_POSITION);
+    const { 
+      board: newBoard, 
+      activeColor,
+      castlingRights: newCastlingRights,
+      enPassantTarget: newEnPassantTarget
+    } = parseFEN(INITIAL_POSITION);
+    
     setBoard(newBoard);
     setCurrentPlayer(activeColor);
     setGameState(GameState.ACTIVE);
@@ -48,22 +79,283 @@ const ChessGame: React.FC = () => {
       [PieceColor.WHITE]: [],
       [PieceColor.BLACK]: []
     });
+    setEnPassantTarget(newEnPassantTarget);
+    setCastlingRights(newCastlingRights);
   };
 
   /**
    * Handle click on a square
    */
   const handleSquareClick = (position: Position) => {
-    // Logic for selecting a piece or making a move will be implemented here
-    console.log(`Clicked on square: (${position.row}, ${position.col})`);
+    // If game is over, ignore clicks
+    if (gameState !== GameState.ACTIVE) {
+      return;
+    }
+    
+    // If AI is thinking, ignore clicks
+    if (currentPlayer === PieceColor.BLACK && gameMode !== GameMode.TWO_PLAYER) {
+      return;
+    }
+    
+    const piece = board[position.row][position.col];
+    
+    // If a piece is already selected
+    if (selectedPosition) {
+      // Check if clicked on a valid move destination
+      const moveToMake = validMoves.find(move => {
+        return move.to.row === position.row && move.to.col === position.col;
+      });
+      
+      if (moveToMake) {
+        // Make the move
+        makeMove(moveToMake);
+        
+        // Deselect the piece
+        setSelectedPosition(null);
+        setValidMoves([]);
+        return;
+      }
+      
+      // If clicked on the same piece, deselect it
+      if (
+        selectedPosition.row === position.row && 
+        selectedPosition.col === position.col
+      ) {
+        setSelectedPosition(null);
+        setValidMoves([]);
+        return;
+      }
+      
+      // If clicked on another own piece, select that piece instead
+      if (piece && piece.color === currentPlayer) {
+        selectPiece(position);
+        return;
+      }
+      
+      // If clicked elsewhere, deselect the piece
+      setSelectedPosition(null);
+      setValidMoves([]);
+    } else {
+      // If no piece is selected yet, select the clicked piece if it belongs to the current player
+      if (piece && piece.color === currentPlayer) {
+        selectPiece(position);
+      }
+    }
+  };
+
+  /**
+   * Select a piece and calculate its valid moves
+   */
+  const selectPiece = (position: Position) => {
+    setSelectedPosition(position);
+    
+    // Get all possible moves for the piece
+    const piece = board[position.row][position.col];
+    if (!piece) return;
+    
+    const possibleMoves = getPossibleMoves(board, position, enPassantTarget, castlingRights);
+    
+    // Filter out moves that would put or leave the king in check
+    const legalMoves = filterLegalMoves(board, possibleMoves, currentPlayer);
+    
+    // Extract just the 'to' positions for highlighting on the board
+    const movePositions = legalMoves.map(move => move.to);
+    setValidMoves(legalMoves);
+  };
+
+  /**
+   * Make a move on the board
+   */
+  const makeMove = (move: Move) => {
+    // Create new board and game state
+    const newBoard = deepClone(board);
+    const newCapturedPieces = deepClone(capturedPieces);
+    const newCastlingRights = deepClone(castlingRights);
+    
+    // Update board with the move
+    applyMove(newBoard, move);
+    
+    // Update castling rights if needed
+    updateCastlingRights(move, newCastlingRights);
+    
+    // Update captured pieces
+    if (move.capturedPiece) {
+      const oppositeColor = move.piece.color === PieceColor.WHITE ? PieceColor.BLACK : PieceColor.WHITE;
+      newCapturedPieces[move.piece.color].push(move.capturedPiece);
+    }
+    
+    // Update en passant target
+    let newEnPassantTarget: Position | null = null;
+    if (
+      move.piece.type === 'pawn' && 
+      Math.abs(move.from.row - move.to.row) === 2
+    ) {
+      // Set en passant target to the square behind the moved pawn
+      const direction = move.piece.color === PieceColor.WHITE ? 1 : -1;
+      newEnPassantTarget = {
+        row: move.to.row + direction,
+        col: move.to.col
+      };
+    }
+    
+    // Add move to history
+    const newMoveHistory = [...moveHistory, move];
+    
+    // Switch player
+    const nextPlayer = currentPlayer === PieceColor.WHITE ? PieceColor.BLACK : PieceColor.WHITE;
+    
+    // Update state
+    setBoard(newBoard);
+    setCapturedPieces(newCapturedPieces);
+    setCastlingRights(newCastlingRights);
+    setEnPassantTarget(newEnPassantTarget);
+    setMoveHistory(newMoveHistory);
+    setCurrentPlayer(nextPlayer);
+    
+    // Check for check, checkmate, or stalemate
+    updateGameState(newBoard, nextPlayer);
+  };
+
+  /**
+   * Update castling rights after a move
+   */
+  const updateCastlingRights = (
+    move: Move, 
+    newCastlingRights: { [color: string]: { kingSide: boolean, queenSide: boolean } }
+  ) => {
+    const { piece, from } = move;
+    
+    // If king moved, remove castling rights for that color
+    if (piece.type === 'king') {
+      newCastlingRights[piece.color].kingSide = false;
+      newCastlingRights[piece.color].queenSide = false;
+    }
+    
+    // If rook moved, remove the corresponding castling right
+    if (piece.type === 'rook') {
+      // King-side rook
+      if (from.col === 7) {
+        newCastlingRights[piece.color].kingSide = false;
+      }
+      // Queen-side rook
+      else if (from.col === 0) {
+        newCastlingRights[piece.color].queenSide = false;
+      }
+    }
+    
+    // If rook captured, remove the corresponding castling right for the opponent
+    if (move.capturedPiece && move.capturedPiece.type === 'rook') {
+      const opponentColor = piece.color === PieceColor.WHITE ? PieceColor.BLACK : PieceColor.WHITE;
+      
+      // King-side rook
+      if (move.to.col === 7) {
+        newCastlingRights[opponentColor].kingSide = false;
+      }
+      // Queen-side rook
+      else if (move.to.col === 0) {
+        newCastlingRights[opponentColor].queenSide = false;
+      }
+    }
+  };
+
+  /**
+   * Update the game state (check, checkmate, stalemate)
+   */
+  const updateGameState = (newBoard: (Piece | null)[][], nextPlayer: PieceColor) => {
+    if (isKingInCheck(newBoard, nextPlayer)) {
+      if (isCheckmate(newBoard, nextPlayer)) {
+        setGameState(GameState.CHECKMATE);
+      } else {
+        setGameState(GameState.CHECK);
+      }
+    } else if (isStalemate(newBoard, nextPlayer)) {
+      setGameState(GameState.STALEMATE);
+    } else {
+      setGameState(GameState.ACTIVE);
+    }
+  };
+
+  /**
+   * Make an AI move
+   */
+  const makeAIMove = () => {
+    // Get all legal moves for all black pieces
+    const allMoves: Move[] = [];
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        const piece = board[row][col];
+        if (piece && piece.color === PieceColor.BLACK) {
+          const possibleMoves = getPossibleMoves(board, { row, col }, enPassantTarget, castlingRights);
+          const legalMoves = filterLegalMoves(board, possibleMoves, PieceColor.BLACK);
+          allMoves.push(...legalMoves);
+        }
+      }
+    }
+    
+    if (allMoves.length === 0) return;
+    
+    // For now, just pick a random move (will implement AI evaluation later)
+    const randomIndex = Math.floor(Math.random() * allMoves.length);
+    const aiMove = allMoves[randomIndex];
+    
+    // Make the move
+    makeMove(aiMove);
   };
 
   /**
    * Undo the last move
    */
   const undoMove = () => {
-    // Logic for undoing a move will be implemented here
-    console.log('Undo move');
+    if (moveHistory.length === 0) return;
+    
+    // If playing against AI, undo both the AI's move and the player's move
+    const movesToUndo = gameMode !== GameMode.TWO_PLAYER ? 2 : 1;
+    
+    // Check if we have enough moves to undo
+    if (moveHistory.length < movesToUndo) return;
+    
+    // Reinitialize the board and replay all moves except the last one(s)
+    const { board: newBoard, activeColor, castlingRights: newCastlingRights } = parseFEN(INITIAL_POSITION);
+    const newMoveHistory = moveHistory.slice(0, moveHistory.length - movesToUndo);
+    
+    // Initialize state
+    setBoard(newBoard);
+    setCurrentPlayer(activeColor);
+    setGameState(GameState.ACTIVE);
+    setSelectedPosition(null);
+    setValidMoves([]);
+    setCapturedPieces({
+      [PieceColor.WHITE]: [],
+      [PieceColor.BLACK]: []
+    });
+    setEnPassantTarget(null);
+    setCastlingRights(newCastlingRights);
+    
+    // Replay all moves except the last one(s)
+    for (const move of newMoveHistory) {
+      applyMove(newBoard, move);
+      updateCastlingRights(move, newCastlingRights);
+      
+      // Update captured pieces
+      if (move.capturedPiece) {
+        const captureColor = move.piece.color;
+        setCapturedPieces(prev => {
+          const newCapturedPieces = deepClone(prev);
+          newCapturedPieces[captureColor].push(move.capturedPiece!);
+          return newCapturedPieces;
+        });
+      }
+    }
+    
+    // Set final state after replaying moves
+    setMoveHistory(newMoveHistory);
+    setCurrentPlayer(newMoveHistory.length % 2 === 0 ? PieceColor.WHITE : PieceColor.BLACK);
+    
+    // Update game state
+    updateGameState(
+      newBoard, 
+      newMoveHistory.length % 2 === 0 ? PieceColor.WHITE : PieceColor.BLACK
+    );
   };
 
   /**
@@ -79,6 +371,35 @@ const ChessGame: React.FC = () => {
    */
   const restartGame = () => {
     initializeBoard();
+  };
+
+  /**
+   * Convert a move to text description
+   */
+  const formatMove = (move: Move, index: number): string => {
+    const moveNumber = Math.floor(index / 2) + 1;
+    const prefix = move.piece.color === PieceColor.WHITE ? `${moveNumber}. ` : '';
+    
+    let moveText = moveToAlgebraic(board, move);
+    
+    // Add check/checkmate symbol
+    if (index < moveHistory.length - 1) {
+      const nextMove = moveHistory[index + 1];
+      const tempBoard = deepClone(board);
+      applyMove(tempBoard, move);
+      
+      const opponentColor = move.piece.color === PieceColor.WHITE ? PieceColor.BLACK : PieceColor.WHITE;
+      
+      if (isKingInCheck(tempBoard, opponentColor)) {
+        if (isCheckmate(tempBoard, opponentColor)) {
+          moveText += '#';
+        } else {
+          moveText += '+';
+        }
+      }
+    }
+    
+    return prefix + moveText;
   };
 
   return (
@@ -112,8 +433,13 @@ const ChessGame: React.FC = () => {
         <div className="captured-pieces white">
           {capturedPieces[PieceColor.BLACK].map((piece, index) => (
             <div key={index} className="captured-piece">
-              {/* Piece representation will be implemented */}
-              {piece.type}
+              {/* Display Unicode chess symbol */}
+              {piece.type === 'king' && '♚'}
+              {piece.type === 'queen' && '♛'}
+              {piece.type === 'rook' && '♜'}
+              {piece.type === 'bishop' && '♝'}
+              {piece.type === 'knight' && '♞'}
+              {piece.type === 'pawn' && '♟'}
             </div>
           ))}
         </div>
@@ -122,15 +448,20 @@ const ChessGame: React.FC = () => {
           board={board} 
           currentPlayer={currentPlayer}
           selectedPosition={selectedPosition}
-          validMoves={validMoves}
+          validMoves={validMoves.map(move => move.to)}
           onSquareClick={handleSquareClick}
         />
         
         <div className="captured-pieces black">
           {capturedPieces[PieceColor.WHITE].map((piece, index) => (
             <div key={index} className="captured-piece">
-              {/* Piece representation will be implemented */}
-              {piece.type}
+              {/* Display Unicode chess symbol */}
+              {piece.type === 'king' && '♔'}
+              {piece.type === 'queen' && '♕'}
+              {piece.type === 'rook' && '♖'}
+              {piece.type === 'bishop' && '♗'}
+              {piece.type === 'knight' && '♘'}
+              {piece.type === 'pawn' && '♙'}
             </div>
           ))}
         </div>
@@ -145,8 +476,7 @@ const ChessGame: React.FC = () => {
             <ul>
               {moveHistory.map((move, index) => (
                 <li key={index}>
-                  {/* Move representation will be implemented */}
-                  Move {index + 1}
+                  {formatMove(move, index)}
                 </li>
               ))}
             </ul>
