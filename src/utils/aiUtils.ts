@@ -251,7 +251,7 @@ function evaluatePawnShield(board: (Piece | null)[][], kingPos: Position, kingCo
   const positions = [
     { row: row + pawnDirection, col: col - 1 },
     { row: row + pawnDirection, col },
-    { row: row + pawnDirection, col + 1 },
+    { row: row + pawnDirection, col + 1 }
   ];
   
   for (const pos of positions) {
@@ -343,8 +343,8 @@ function isEndgamePhase(board: (Piece | null)[][]): boolean {
  * Find the best move for the AI using the minimax algorithm with alpha-beta pruning
  */
 export function findBestMove(
-  board: (Piece | null)[][], 
-  depth: number, 
+  board: (Piece | null)[][],
+  depth: number,
   isBlack: boolean,
   enPassantTarget: Position | null = null,
   castlingRights: { [color: string]: { kingSide: boolean, queenSide: boolean } } = {
@@ -380,12 +380,12 @@ export function findBestMove(
     
     // Evaluate the position using minimax
     const score = minimax(
-      newBoard, 
-      depth - 1, 
-      -Infinity, 
-      Infinity, 
-      !isBlack, 
-      enPassantTarget, 
+      newBoard,
+      depth - 1,
+      -Infinity,
+      Infinity,
+      !isBlack,
+      enPassantTarget,
       castlingRights
     );
     
@@ -410,10 +410,10 @@ export function findBestMove(
  * Minimax algorithm with alpha-beta pruning
  */
 function minimax(
-  board: (Piece | null)[][], 
-  depth: number, 
-  alpha: number, 
-  beta: number, 
+  board: (Piece | null)[][],
+  depth: number,
+  alpha: number,
+  beta: number,
   isMaximizingPlayer: boolean,
   enPassantTarget: Position | null = null,
   castlingRights: { [color: string]: { kingSide: boolean, queenSide: boolean } } = {
@@ -454,11 +454,11 @@ function minimax(
       const newBoard = deepClone(board);
       applyMove(newBoard, move);
       
-      const eval = minimax(newBoard, depth - 1, alpha, beta, false, enPassantTarget, castlingRights);
-      maxEval = Math.max(maxEval, eval);
+      const evalScore = minimax(newBoard, depth - 1, alpha, beta, false, enPassantTarget, castlingRights);
+      maxEval = Math.max(maxEval, evalScore);
       
       // Alpha-beta pruning
-      alpha = Math.max(alpha, eval);
+      alpha = Math.max(alpha, evalScore);
       if (beta <= alpha) {
         break;
       }
@@ -472,11 +472,11 @@ function minimax(
       const newBoard = deepClone(board);
       applyMove(newBoard, move);
       
-      const eval = minimax(newBoard, depth - 1, alpha, beta, true, enPassantTarget, castlingRights);
-      minEval = Math.min(minEval, eval);
+      const evalScore = minimax(newBoard, depth - 1, alpha, beta, true, enPassantTarget, castlingRights);
+      minEval = Math.min(minEval, evalScore);
       
       // Alpha-beta pruning
-      beta = Math.min(beta, eval);
+      beta = Math.min(beta, evalScore);
       if (beta <= alpha) {
         break;
       }
