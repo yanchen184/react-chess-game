@@ -215,3 +215,173 @@ export function applyMove(board: (Piece | null)[][], move: Move): void {
     board[enPassantCapturePos.row][enPassantCapturePos.col] = null;
   }
 }
+
+/**
+ * Get all possible pawn moves
+ */
+function getPawnMoves(
+  board: (Piece | null)[][],
+  position: Position,
+  piece: Piece,
+  moves: Move[],
+  enPassantTarget: Position | null
+): void {
+  const { row, col } = position;
+  const direction = piece.color === PieceColor.WHITE ? -1 : 1;
+  
+  // Forward moves
+  const oneForward = { row: row + direction, col };
+  
+  if (isValidPosition(oneForward) && !board[oneForward.row][oneForward.col]) {
+    // Regular forward move
+    if ((piece.color === PieceColor.WHITE && oneForward.row === 0) || 
+        (piece.color === PieceColor.BLACK && oneForward.row === 7)) {
+      // Promotion
+      addPawnPromotionMoves(moves, position, oneForward, piece);
+    } else {
+      moves.push({
+        from: position,
+        to: oneForward,
+        type: MoveType.NORMAL,
+        piece
+      });
+    }
+    
+    // Two-square move from starting position
+    if ((piece.color === PieceColor.WHITE && row === 6) || 
+        (piece.color === PieceColor.BLACK && row === 1)) {
+      const twoForward = { row: row + 2 * direction, col };
+      
+      if (isValidPosition(twoForward) && !board[twoForward.row][twoForward.col]) {
+        moves.push({
+          from: position,
+          to: twoForward,
+          type: MoveType.NORMAL,
+          piece
+        });
+      }
+    }
+  }
+  
+  // Capture moves
+  const captureMoves = [
+    { row: row + direction, col: col - 1 },
+    { row: row + direction, col: col + 1 }
+  ];
+  
+  for (const captureMove of captureMoves) {
+    if (isValidPosition(captureMove)) {
+      const targetPiece = board[captureMove.row][captureMove.col];
+      
+      if (targetPiece && targetPiece.color !== piece.color) {
+        // Regular capture
+        if ((piece.color === PieceColor.WHITE && captureMove.row === 0) || 
+            (piece.color === PieceColor.BLACK && captureMove.row === 7)) {
+          // Capture with promotion
+          addPawnPromotionMoves(moves, position, captureMove, piece, targetPiece);
+        } else {
+          moves.push({
+            from: position,
+            to: captureMove,
+            type: MoveType.CAPTURE,
+            piece,
+            capturedPiece: targetPiece
+          });
+        }
+      }
+      
+      // En passant capture
+      if (enPassantTarget && 
+          captureMove.row === enPassantTarget.row && 
+          captureMove.col === enPassantTarget.col) {
+        const capturedPawnPos = { 
+          row: row, 
+          col: enPassantTarget.col 
+        };
+        const capturedPawn = board[capturedPawnPos.row][capturedPawnPos.col];
+        
+        if (capturedPawn && capturedPawn.type === PieceType.PAWN && 
+            capturedPawn.color !== piece.color) {
+          moves.push({
+            from: position,
+            to: captureMove,
+            type: MoveType.EN_PASSANT,
+            piece,
+            capturedPiece: capturedPawn,
+            enPassantCapturePos: capturedPawnPos
+          });
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Add pawn promotion moves
+ */
+function addPawnPromotionMoves(
+  moves: Move[],
+  from: Position,
+  to: Position,
+  piece: Piece,
+  capturedPiece?: Piece
+): void {
+  const promotionPieces = [
+    PieceType.QUEEN,
+    PieceType.ROOK,
+    PieceType.BISHOP,
+    PieceType.KNIGHT
+  ];
+  
+  for (const promotionPieceType of promotionPieces) {
+    moves.push({
+      from,
+      to,
+      type: capturedPiece ? MoveType.CAPTURE_AND_PROMOTION : MoveType.PROMOTION,
+      piece,
+      capturedPiece,
+      promotionPieceType
+    });
+  }
+}
+
+/**
+ * Get all possible knight moves
+ */
+function getKnightMoves(
+  board: (Piece | null)[][],
+  position: Position,
+  piece: Piece,
+  moves: Move[]
+): void {
+  const { row, col } = position;
+  
+  for (const knightMove of KNIGHT_MOVES) {
+    const newRow = row + knightMove.row;
+    const newCol = col + knightMove.col;
+    const newPos = { row: newRow, col: newCol };
+    
+    if (isValidPosition(newPos)) {
+      const targetPiece = board[newRow][newCol];
+      
+      if (!targetPiece) {
+        // Empty square
+        moves.push({
+          from: position,
+          to: newPos,
+          type: MoveType.NORMAL,
+          piece
+        });
+      } else if (targetPiece.color !== piece.color) {
+        // Capture
+        moves.push({
+          from: position,
+          to: newPos,
+          type: MoveType.CAPTURE,
+          piece,
+          capturedPiece: targetPiece
+        });
+      }
+    }
+  }
+}
