@@ -6,4 +6,140 @@ import {
   PieceColor, 
   Piece, 
   Position 
-} from '../models/types';\n\n/**\n * 初始棋盤FEN表示法\n */\nexport const INITIAL_POSITION = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';\n\n/**\n * 將代數表示法（例如，\"e4\"）轉換為棋盤坐標 [row, col]\n */\nexport function algebraicToCoords(algebraic: string): Position | null {\n  if (!algebraic || algebraic.length !== 2) {\n    return null;\n  }\n  \n  const file = algebraic.charAt(0).toLowerCase();\n  const rank = algebraic.charAt(1);\n  \n  if (!FILES.includes(file) || !RANKS.includes(rank)) {\n    return null;\n  }\n  \n  const col = FILES.indexOf(file);\n  const row = RANKS.indexOf(rank);\n  \n  return { row, col };\n}\n\n/**\n * 將棋盤坐標 [row, col] 轉換為代數表示法（例如，\"e4\"）\n */\nexport function coordsToAlgebraic(position: Position): string | null {\n  const { row, col } = position;\n  \n  if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) {\n    return null;\n  }\n  \n  const file = FILES[col];\n  const rank = RANKS[row];\n  \n  return file + rank;\n}\n\n/**\n * 檢查一個位置是否在棋盤範圍內\n */\nexport function isValidPosition(position: Position): boolean {\n  const { row, col } = position;\n  return row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE;\n}\n\n/**\n * 深拷貝一個對象或數組\n */\nexport function deepClone<T>(obj: T): T {\n  return JSON.parse(JSON.stringify(obj));\n}\n\n/**\n * 解析FEN表示法為棋盤狀態\n */\nexport function parseFEN(fen: string): { \n  board: (Piece | null)[][],\n  activeColor: PieceColor,\n  castlingRights: { [color: string]: { kingSide: boolean, queenSide: boolean } },\n  enPassantTarget: Position | null,\n  halfmoveClock: number,\n  fullmoveNumber: number\n} {\n  const parts = fen.split(' ');\n  const boardPart = parts[0];\n  const activeColorPart = parts[1];  // 'w' or 'b'\n  const castlingPart = parts[2];     // 'KQkq', 'Kk', etc.\n  const enPassantPart = parts[3];    // '-' or target square\n  const halfmoveClockPart = parts[4]; // Halfmove clock for 50-move rule\n  const fullmoveNumberPart = parts[5]; // Fullmove number\n  \n  const board: (Piece | null)[][] = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));\n  const rows = boardPart.split('/');\n  \n  // Parse board position\n  for (let i = 0; i < BOARD_SIZE; i++) {\n    let col = 0;\n    for (let j = 0; j < rows[i].length; j++) {\n      const char = rows[i].charAt(j);\n      if (isNaN(Number(char))) {\n        // It's a piece\n        const color = char === char.toUpperCase() ? PieceColor.WHITE : PieceColor.BLACK;\n        let type: PieceType;\n        \n        switch (char.toUpperCase()) {\n          case 'P': type = PieceType.PAWN; break;\n          case 'R': type = PieceType.ROOK; break;\n          case 'N': type = PieceType.KNIGHT; break;\n          case 'B': type = PieceType.BISHOP; break;\n          case 'Q': type = PieceType.QUEEN; break;\n          case 'K': type = PieceType.KING; break;\n          default: continue; // Skip unknown characters\n        }\n        \n        board[i][col] = { type, color, hasMoved: false };\n        col++;\n      } else {\n        // It's a number (empty squares)\n        col += parseInt(char);\n      }\n    }\n  }\n  \n  // Parse game state\n  const activeColor = activeColorPart === 'w' ? PieceColor.WHITE : PieceColor.BLACK;\n  \n  const castlingRights = {\n    [PieceColor.WHITE]: {\n      kingSide: castlingPart.includes('K'),\n      queenSide: castlingPart.includes('Q')\n    },\n    [PieceColor.BLACK]: {\n      kingSide: castlingPart.includes('k'),\n      queenSide: castlingPart.includes('q')\n    }\n  };\n  \n  const enPassantTarget = enPassantPart === '-' ? null : algebraicToCoords(enPassantPart);\n  const halfmoveClock = parseInt(halfmoveClockPart);\n  const fullmoveNumber = parseInt(fullmoveNumberPart);\n  \n  return {\n    board,\n    activeColor,\n    castlingRights,\n    enPassantTarget,\n    halfmoveClock,\n    fullmoveNumber\n  };\n}\n\n/**\n * 將棋盤狀態轉換為FEN表示法\n */\nexport function boardToFEN(gameState: { \n  board: (Piece | null)[][],\n  activeColor: PieceColor,\n  castlingRights: { [color: string]: { kingSide: boolean, queenSide: boolean } },\n  enPassantTarget: Position | null,\n  halfmoveClock: number,\n  fullmoveNumber: number\n}): string {\n  const { board, activeColor, castlingRights, enPassantTarget, halfmoveClock, fullmoveNumber } = gameState;\n  let fen = '';\n  \n  // Board position\n  for (let i = 0; i < BOARD_SIZE; i++) {\n    let emptyCount = 0;\n    \n    for (let j = 0; j < BOARD_SIZE; j++) {\n      const piece = board[i][j];\n      \n      if (piece === null) {\n        emptyCount++;\n      } else {\n        if (emptyCount > 0) {\n          fen += emptyCount;\n          emptyCount = 0;\n        }\n        \n        let pieceChar;\n        switch (piece.type) {\n          case PieceType.PAWN: pieceChar = 'p'; break;\n          case PieceType.ROOK: pieceChar = 'r'; break;\n          case PieceType.KNIGHT: pieceChar = 'n'; break;\n          case PieceType.BISHOP: pieceChar = 'b'; break;\n          case PieceType.QUEEN: pieceChar = 'q'; break;\n          case PieceType.KING: pieceChar = 'k'; break;\n          default: pieceChar = '?'; // Should never happen\n        }\n        \n        if (piece.color === PieceColor.WHITE) {\n          pieceChar = pieceChar.toUpperCase();\n        }\n        \n        fen += pieceChar;\n      }\n    }\n    \n    if (emptyCount > 0) {\n      fen += emptyCount;\n    }\n    \n    if (i < BOARD_SIZE - 1) {\n      fen += '/';\n    }\n  }\n  \n  // Active color\n  fen += ' ' + (activeColor === PieceColor.WHITE ? 'w' : 'b');\n  \n  // Castling rights\n  let castlingString = '';\n  if (castlingRights[PieceColor.WHITE].kingSide) castlingString += 'K';\n  if (castlingRights[PieceColor.WHITE].queenSide) castlingString += 'Q';\n  if (castlingRights[PieceColor.BLACK].kingSide) castlingString += 'k';\n  if (castlingRights[PieceColor.BLACK].queenSide) castlingString += 'q';\n  fen += ' ' + (castlingString || '-');\n  \n  // En passant target\n  fen += ' ' + (enPassantTarget ? coordsToAlgebraic(enPassantTarget) : '-');\n  \n  // Halfmove clock and fullmove number\n  fen += ' ' + halfmoveClock + ' ' + fullmoveNumber;\n  \n  return fen;\n}
+} from '../models/types';
+
+/**
+ * 初始棋盤FEN表示法
+ */
+export const INITIAL_POSITION = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+/**
+ * 將代數表示法（例如，"e4"）轉換為棋盤坐標 [row, col]
+ */
+export function algebraicToCoords(algebraic: string): Position | null {
+  if (!algebraic || algebraic.length !== 2) {
+    return null;
+  }
+  
+  const file = algebraic.charAt(0).toLowerCase();
+  const rank = algebraic.charAt(1);
+  
+  if (!FILES.includes(file) || !RANKS.includes(rank)) {
+    return null;
+  }
+  
+  const col = FILES.indexOf(file);
+  const row = RANKS.indexOf(rank);
+  
+  return { row, col };
+}
+
+/**
+ * 將棋盤坐標 [row, col] 轉換為代數表示法（例如，"e4"）
+ */
+export function coordsToAlgebraic(position: Position): string | null {
+  const { row, col } = position;
+  
+  if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) {
+    return null;
+  }
+  
+  const file = FILES[col];
+  const rank = RANKS[row];
+  
+  return file + rank;
+}
+
+/**
+ * 檢查一個位置是否在棋盤範圍內
+ */
+export function isValidPosition(position: Position): boolean {
+  const { row, col } = position;
+  return row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE;
+}
+
+/**
+ * 深拷貝一個對象或數組
+ */
+export function deepClone<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+/**
+ * 解析FEN表示法為棋盤狀態
+ */
+export function parseFEN(fen: string): { 
+  board: (Piece | null)[][],
+  activeColor: PieceColor,
+  castlingRights: { [color: string]: { kingSide: boolean, queenSide: boolean } },
+  enPassantTarget: Position | null,
+  halfmoveClock: number,
+  fullmoveNumber: number
+} {
+  const parts = fen.split(' ');
+  const boardPart = parts[0];
+  const activeColorPart = parts[1];  // 'w' or 'b'
+  const castlingPart = parts[2];     // 'KQkq', 'Kk', etc.
+  const enPassantPart = parts[3];    // '-' or target square
+  const halfmoveClockPart = parts[4]; // Halfmove clock for 50-move rule
+  const fullmoveNumberPart = parts[5]; // Fullmove number
+  
+  const board: (Piece | null)[][] = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
+  const rows = boardPart.split('/');
+  
+  // Parse board position
+  for (let i = 0; i < BOARD_SIZE; i++) {
+    let col = 0;
+    for (let j = 0; j < rows[i].length; j++) {
+      const char = rows[i].charAt(j);
+      if (isNaN(Number(char))) {
+        // It's a piece
+        const color = char === char.toUpperCase() ? PieceColor.WHITE : PieceColor.BLACK;
+        let type: PieceType;
+        
+        switch (char.toUpperCase()) {
+          case 'P': type = PieceType.PAWN; break;
+          case 'R': type = PieceType.ROOK; break;
+          case 'N': type = PieceType.KNIGHT; break;
+          case 'B': type = PieceType.BISHOP; break;
+          case 'Q': type = PieceType.QUEEN; break;
+          case 'K': type = PieceType.KING; break;
+          default: continue; // Skip unknown characters
+        }
+        
+        board[i][col] = { type, color, hasMoved: false };
+        col++;
+      } else {
+        // It's a number (empty squares)
+        col += parseInt(char);
+      }
+    }
+  }
+  
+  // Parse game state
+  const activeColor = activeColorPart === 'w' ? PieceColor.WHITE : PieceColor.BLACK;
+  
+  const castlingRights = {
+    [PieceColor.WHITE]: {
+      kingSide: castlingPart.includes('K'),
+      queenSide: castlingPart.includes('Q')
+    },
+    [PieceColor.BLACK]: {
+      kingSide: castlingPart.includes('k'),
+      queenSide: castlingPart.includes('q')
+    }
+  };
+  
+  const enPassantTarget = enPassantPart === '-' ? null : algebraicToCoords(enPassantPart);
+  const halfmoveClock = parseInt(halfmoveClockPart);
+  const fullmoveNumber = parseInt(fullmoveNumberPart);
+  
+  return {
+    board,
+    activeColor,
+    castlingRights,
+    enPassantTarget,
+    halfmoveClock,
+    fullmoveNumber
+  };
+}
