@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Board from './Board';
 import { PieceColor, GameState, GameMode, MoveType, Piece, Position, Move, AI_DEPTH } from '../models/types';
 import { parseFEN, INITIAL_POSITION, deepClone, coordsToAlgebraic } from '../utils/boardUtils';
@@ -40,11 +40,22 @@ const ChessGame: React.FC = () => {
   });
   // AI is thinking
   const [isAIThinking, setIsAIThinking] = useState<boolean>(false);
-
-  // Sound effect for moving pieces
-  const moveSound = new Audio(`${process.env.PUBLIC_URL}/sounds/move.mp3`);
-  const captureSound = new Audio(`${process.env.PUBLIC_URL}/sounds/capture.mp3`);
-  const checkSound = new Audio(`${process.env.PUBLIC_URL}/sounds/check.mp3`);
+  
+  // Sound effects
+  const moveSound = useRef<HTMLAudioElement | null>(null);
+  const captureSound = useRef<HTMLAudioElement | null>(null);
+  const checkSound = useRef<HTMLAudioElement | null>(null);
+  
+  // Initialize sound effects
+  useEffect(() => {
+    try {
+      moveSound.current = new Audio(`${process.env.PUBLIC_URL}/sounds/move.mp3`);
+      captureSound.current = new Audio(`${process.env.PUBLIC_URL}/sounds/capture.mp3`);
+      checkSound.current = new Audio(`${process.env.PUBLIC_URL}/sounds/check.mp3`);
+    } catch (error) {
+      console.warn("無法加載音效文件:", error);
+    }
+  }, []);
 
   // Initialize the board when the component mounts
   useEffect(() => {
@@ -99,16 +110,16 @@ const ChessGame: React.FC = () => {
   const playMoveSound = useCallback((move: Move, newGameState: GameState) => {
     try {
       if (newGameState === GameState.CHECK || newGameState === GameState.CHECKMATE) {
-        checkSound.play();
+        checkSound.current?.play();
       } else if (move.capturedPiece) {
-        captureSound.play();
+        captureSound.current?.play();
       } else {
-        moveSound.play();
+        moveSound.current?.play();
       }
     } catch (error) {
-      console.error("Error playing sound:", error);
+      console.warn("播放音效時出錯:", error);
     }
-  }, [moveSound, captureSound, checkSound]);
+  }, []);
 
   /**
    * Handle click on a square
@@ -464,6 +475,7 @@ const ChessGame: React.FC = () => {
             {!isAIThinking && gameState === GameState.STALEMATE && '和局 - 無子可動'}
             {!isAIThinking && gameState === GameState.DRAW && '和局'}
           </h2>
+          <span className="version">v1.0.1</span>
         </div>
         <div className="game-controls">
           <button onClick={undoMove} disabled={isAIThinking || moveHistory.length === 0}>撤銷上一步</button>
