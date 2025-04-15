@@ -475,7 +475,7 @@ const ChessGame: React.FC = () => {
             {!isAIThinking && gameState === GameState.STALEMATE && '和局 - 無子可動'}
             {!isAIThinking && gameState === GameState.DRAW && '和局'}
           </h2>
-          <span className="version">v1.0.1</span>
+          <span className="version">v1.1.0</span>
         </div>
         <div className="game-controls">
           <button onClick={undoMove} disabled={isAIThinking || moveHistory.length === 0}>撤銷上一步</button>
