@@ -6,7 +6,7 @@ function App() {
   return (
     <div className="App">
       <header className="App-header">
-        <h1>React Chess Game <span className="version">v1.0.1</span></h1>
+        <h1>React Chess Game <span className="version">v1.1.0</span></h1>
       </header>
       <main>
         <ChessGame />
